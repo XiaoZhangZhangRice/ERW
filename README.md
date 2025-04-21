@@ -17,8 +17,8 @@ Secondary: Evaluate soil geochemical changes to soils, especially heavy metal co
 # Treatments
 Treatments include a low to high rate of rock amendment application
 
-0 Mg ha-1
-5 Mg ha-1
-20 Mg ha-1
-35 Mg ha-1
-50 Mg ha-1
+* 0 Mg ha-1
+* 5 Mg ha-1
+* 20 Mg ha-1
+* 35 Mg ha-1
+* 50 Mg ha-1
