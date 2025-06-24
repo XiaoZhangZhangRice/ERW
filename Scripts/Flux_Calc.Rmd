@@ -1,0 +1,92 @@
+---
+title: "Flux_Calc"
+author: "Zhang Zhenglin"
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+```
+
+# Data Organisation
+
+## Reading the raw file 
+
+```{r}
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data",
+                    skip = 0,           # keep header row
+                    col_types = cols()) # let readr guess types
+
+glimpse(raw7810)      # check column names & types
+
+raw7810 <- raw7810 %>% 
+  separate(`TIMESTAMP`, into = c("Date", "Time"), sep = " ") %>% 
+  mutate(datetime = lubridate::ymd_hms(paste(Date, Time)))
+
+
+```
+
+
+## Read from excel
+
+```{r}
+data <- read.delim("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data", header = TRUE)
+
+
+
+#### data from LGR
+# get the directory of the example LGR raw data
+example_data1 <- system.file("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data", package = "FluxCalR")
+example_data1 # check the directory
+#> [1] "C:/Users/juzh/Documents/R/win-library/4.0/FluxCalR/extdata/Flux_example_1_LGR.txt"
+
+# load the data
+Flux_lgr <- LoadLGR(file = example_data1,
+                    time_format = "mdy_HMS")
+
+Flux_lgr <- LoadLGR(file = example_data1,
+                    time_format = "mdy_HMS")
+
+
+```
+```{r}
+# Process multiple files
+files <- list.files(pattern = "*.csv")
+
+all_fluxes <- lapply(files, function(file) {
+  data <- read.csv(file)
+  data$Time <- as.POSIXct(data$Time)
+  FluxCal(data, conc_col = "Conc", time_col = "Time", 
+          area = 0.25, volume = 0.1, gas = "CO2")
+})
+
+# Combine results
+combined_fluxes <- do.call(rbind, all_fluxes)
+```
+
