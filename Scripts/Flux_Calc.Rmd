@@ -92,7 +92,7 @@ str(field)
 ## Cleaning the master Li-Cor file
 
 ```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-27T090000.data",
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_Jul232025.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
   filter(!row_number() %in% c(1))  #removes the units row of the dataframe
@@ -259,6 +259,40 @@ model <- lm(CH4_flux_g_ha_day~Treatment, data = final_flux)
 
 anova(model)
 
+means <- emmeans(model, spec = "Treatment")
+cld(means)
+```
+```{r}
+
+flux_plot <- final_flux %>% 
+  group_by(Date, Treatment)%>%
+  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>% 
+  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
+            CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+
+
+ggplot(flux_plot,
+       aes(x=Date, y=CH4_flux_g_ha_day,color= Treatment))+
+  geom_point()+
+  geom_line()
+  #geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se))
+```
+```{r}
+Jun_27 <- final_flux %>% filter(Date == as.Date("2025-06-27"))
+
+Jul_4 <- final_flux %>% filter(Date == as.Date("2025-07-4"))
+```
+
+```{r}
+model <- lm(CH4_flux_g_ha_day~Treatment, data = Jun_27)
+anova(model)
+means <- emmeans(model, spec = "Treatment")
+cld(means)
+```
+
+```{r}
+model <- lm(CH4_flux_g_ha_day~Treatment, data = Jul_4)
+anova(model)
 means <- emmeans(model, spec = "Treatment")
 cld(means)
 ```
