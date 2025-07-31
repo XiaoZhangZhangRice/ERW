@@ -95,14 +95,14 @@ str(field)
 raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-27T090000.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
-  filter(!row_number() %in% c(1))  
+  filter(!row_number() %in% c(1))  #removes the units row of the dataframe
 
 # Combine date and time into a single datetime column, concentration of CH4 is changed from ppm to ppb
 needed_data <- data.frame(
   CH4 = as.numeric(raw7810$CH4)*0.001,
   datetime = as.POSIXct(
     paste(raw7810$DATE, raw7810$TIME),  # Combine date and time strings
-    format = "%Y-%m-%d %H:%M:%S"        # Adjust format to match your data
+    format = "%Y-%m-%d %H:%M:%S"        # Adjust format to match data
   ),
   residuals = as.numeric(raw7810$RESIDUAL)
 )
@@ -155,10 +155,10 @@ get_CH4_slopes <- function(data) {
         return(tibble(
           Plot = df$Plot[1],
           date = df$date[1],
-          n = nrow(df),
-          n_ch4 = sum(!is.na(df$CH4)),
+          #n = nrow(df),
+          #n_ch4 = sum(!is.na(df$CH4)),
           time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
-          ch4_var = var(df$CH4, na.rm = TRUE),
+          #ch4_var = var(df$CH4, na.rm = TRUE),
           slope = NA_real_,
           r_squared = NA_real_
         ))
@@ -177,10 +177,10 @@ get_CH4_slopes <- function(data) {
       tibble(
         Plot = df$Plot[1],
         date = df$date[1],
-        n = nrow(df),
-        n_ch4 = sum(!is.na(df$CH4)),
+        #n = nrow(df),
+        #n_ch4 = sum(!is.na(df$CH4)),
         time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
-        ch4_var = var(df$CH4, na.rm = TRUE),
+        #ch4_var = var(df$CH4, na.rm = TRUE),
         slope = slope,
         r_squared = r2
       )
@@ -193,14 +193,51 @@ get_CH4_slopes <- function(data) {
 ## Get CH4 slopes (ppm/s)
 
 ```{r}
-get_CH4_slopes(licor_annotated)
-
-#write.csv(licor_annotated, "../annotated_licor.csv", row.names = FALSE)
+all_fluxes<- get_CH4_slopes(licor_annotated)
 ```
 
 ## Calculate flux 
 
+## Going from change in concentration to flux
+
+![Equation for calcualting flux](C:/Users/zhang/Documents/GitHub/ERW/Scripts/Flux_Equation.png)
+
+Zhang, Z., Fenster, T. L. D., & Linquist, B. A. (2025). Greenhouse gas emissions altered by the introduction of a year-long fallow to continuous rice systems. Journal of Environmental Quality, 1–15. https://doi.org/10.1002/jeq2.70055
+
+```{r}
+
+#get temperature,volume, and chamber area from field metadata
+all_fluxes$Date <- all_fluxes$date
+
+all_fluxes <- all_fluxes %>%
+  left_join(field %>% select(Date, Plot, Volume_L, Chamber_Temp_C), 
+            by = c("Date", "Plot")) %>%
+  mutate(Area=Chamber_area/100000000) #changing from cm2 to ha
+
+
+# this is to convert change in concentration over time from ppm/s (all_fluxes$slope) to mg L-1 s-1 using ideal gas law
+all_fluxes$slope_mg_L_s <- (((all_fluxes$slope)/((((760*22.4)*(273+all_fluxes$Chamber_Temp_C))/(760*273))))*(0.016043))
+
+# get flux with chamber volume and area. Scale from mg/s to mg/d
+all_fluxes$CH4_flux_g_ha_day <- ((all_fluxes$slope_mg_L_s)/(all_fluxes$Area))*(all_fluxes$Volume_L)*86400*0.001
+
+all_fluxes$CH4_flux_g_ha_day_all_in_one <- ((((all_fluxes$slope)/((((760*22.4)*(273+all_fluxes$Chamber_Temp_C))/(760*273))))*(0.016043))/(all_fluxes$Area))*(all_fluxes$Volume_L)*86400*0.001
+                              
+```
+
 ## Create final dataframe with plot, flux, and date for downstream applications
+
+```{r}
+final_flux <- all_fluxes %>% 
+  select(Plot, Date, CH4_flux_g_ha_day) %>%
+  mutate(Treatment = factor(str_sub(Plot, 2)))
+  
+str(final_flux)
+
+#write_xlsx()(all_fluxes, path= "../Computed_Flux/all_fluxes.csv")
+
+#write.xlsx(all_fluxes, path= "../Computed_Flux/all_fluxes.xlsx", sheetName = "1", rowNames = FALSE)
+```
 
 
 ## Create PDF with all the plots to visually inspect change in concentration over time is linear.
@@ -210,5 +247,19 @@ ggplot(licor_annotated,
        aes(x=datetime, y=CH4))+
   geom_point()
 # 15 plots, very nice
+```
+
+```{r}
+ggplot(final_flux,
+       aes(x=Treatment, y=CH4_flux_g_ha_day))+
+  geom_boxplot()
+
+
+model <- lm(CH4_flux_g_ha_day~Treatment, data = final_flux)
+
+anova(model)
+
+means <- emmeans(model, spec = "Treatment")
+cld(means)
 ```
 
