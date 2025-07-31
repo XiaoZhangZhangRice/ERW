@@ -32,61 +32,183 @@ library(formatR)
 library(readxl)
 library(FluxCalR)
 library(tidyverse)
-```
-
-# Data Organisation
-
-## Reading the raw file 
-
-```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data",
-                    skip = 0,           # keep header row
-                    col_types = cols()) # let readr guess types
-
-glimpse(raw7810)      # check column names & types
-
-raw7810 <- raw7810 %>% 
-  separate(`TIMESTAMP`, into = c("Date", "Time"), sep = " ") %>% 
-  mutate(datetime = lubridate::ymd_hms(paste(Date, Time)))
-
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
 
 ```
 
-
-## Read from excel
+# Entering known parameters of the chamber and set up
 
 ```{r}
-data <- read.delim("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data", header = TRUE)
+# volume here expressed at cm3, area in cm2 and height in cm
+LiCor_internal_vol <- 20
+Chamber_lid_height <- 7.62
+Chamber_area <- pi*14.75*14.75
+```
 
+# Field metadata
 
+```{r}
+field <- read_excel("../Field_Data/Field_Data.xlsx", sheet = 1)
+str(field)
 
-#### data from LGR
-# get the directory of the example LGR raw data
-example_data1 <- system.file("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-02T090000.data", package = "FluxCalR")
-example_data1 # check the directory
-#> [1] "C:/Users/juzh/Documents/R/win-library/4.0/FluxCalR/extdata/Flux_example_1_LGR.txt"
+#chamber volume in cm3 is length multiplied by area. 
+#Length is given by (sum of chamber lid)+(headspace)+(extension lenght) 
+#Note that headspace can be negative because floodwater may be above the top of the chamber collar
+#We also convert volume from cm3 to L in the calculation below 
 
-# load the data
-Flux_lgr <- LoadLGR(file = example_data1,
-                    time_format = "mdy_HMS")
+field$Closure_datetime_start <- as.POSIXct(
+  paste(field$Date, format(as.POSIXct(field$Closure_start_time, format = "%Y-%m-%d %H:%M:%S"), "%H:%M:%S")),
+  format = "%Y-%m-%d %H:%M:%S"
+)
 
-Flux_lgr <- LoadLGR(file = example_data1,
-                    time_format = "mdy_HMS")
+#Create Closure_datetime_end by adding Duration_min (in minutes) to Closure_datetime
+#now we have the time that the chamber is enclosured by the Li-Cor Instrument
+#Duration_min * 60 converts minutes to seconds (because POSIXct handles times in seconds).
+field$Closure_datetime_end <- field$Closure_datetime_start + field$Duration_min * 60
 
+field$mean_headspace <- rowMeans(field[, c("Headspace_1_cm", "Headspace_2_cm", "Headspace_3_cm", "Headspace_4_cm")], na.rm = TRUE)
+field$Length_cm <- field$mean_headspace+Chamber_lid_height+(field$Extension_length_ft*30.48)
+field$Volume_L <- (field$Length_cm*Chamber_area+LiCor_internal_vol)*0.001
+
+#remove the first minute and last minute
+field$trimmed_start <-  field$Closure_datetime_start + 60 
+field$trimmed_end <- field$Closure_datetime_end - 60
+
+str(field)
+```
+
+# Li-Cor Data
+
+## Reading all the relevant Li-Cor files
+
+```{r}
+#so far not needed yet so leaving it here
+```
+
+## Cleaning the master Li-Cor file
+
+```{r}
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-06-27T090000.data",
+                    skip = 5   # skips the first 5 rows      
+                    ) %>%
+  filter(!row_number() %in% c(1))  
+
+# Combine date and time into a single datetime column, concentration of CH4 is changed from ppm to ppb
+needed_data <- data.frame(
+  CH4 = as.numeric(raw7810$CH4)*0.001,
+  datetime = as.POSIXct(
+    paste(raw7810$DATE, raw7810$TIME),  # Combine date and time strings
+    format = "%Y-%m-%d %H:%M:%S"        # Adjust format to match your data
+  ),
+  residuals = as.numeric(raw7810$RESIDUAL)
+)
+
+needed_data <- needed_data %>%
+  filter(residuals < 0.025) %>% #removes datapoints where residuals are low
+  mutate(
+    date = as.Date(datetime),
+    time = format(datetime, "%H:%M:%S")
+  ) %>%
+  select(CH4, date, time, datetime) 
+
+str(needed_data)
+```
+
+## Using field metadata to annotate plots to the Li-Cor data
+
+```{r}
+# Convert both dataframes to data.tables
+setDT(needed_data)
+setDT(field)
+
+# Perform a non-equi join (join where datetime is between trimmed_start and trimmed_end)
+licor_annotated <- field[needed_data, 
+                         on = .(trimmed_start <= datetime, trimmed_end >= datetime), 
+                         .(datetime, CH4,  Plot), 
+                         nomatch = 0]
+
+licor_annotated$CH4 <- as.numeric(licor_annotated$CH4)
+licor_annotated$Plot <- as.factor(licor_annotated$Plot)
+
+str(licor_annotated)
+```
+
+# Flux calculation
+
+## Function that calculates change in CH4 concentration over time (ppm/s)
+
+```{r}
+get_CH4_slopes <- function(data) {
+  data %>%
+    mutate(
+      date = as.Date(datetime),
+      datetime_num = as.numeric(datetime) - min(as.numeric(datetime), na.rm = TRUE)
+    ) %>%
+    group_by(Plot, date) %>%
+    group_split() %>%
+    map_dfr(function(df) {
+      if (nrow(df) < 2 || all(is.na(df$CH4))) {
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          n = nrow(df),
+          n_ch4 = sum(!is.na(df$CH4)),
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          ch4_var = var(df$CH4, na.rm = TRUE),
+          slope = NA_real_,
+          r_squared = NA_real_
+        ))
+      }
+      
+      model <- tryCatch(lm(CH4 ~ datetime_num, data = df), error = function(e) NULL)
+      
+      if (is.null(model)) {
+        slope <- NA_real_
+        r2 <- NA_real_
+      } else {
+        slope <- coef(model)["datetime_num"]
+        r2 <- summary(model)$r.squared
+      }
+      
+      tibble(
+        Plot = df$Plot[1],
+        date = df$date[1],
+        n = nrow(df),
+        n_ch4 = sum(!is.na(df$CH4)),
+        time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+        ch4_var = var(df$CH4, na.rm = TRUE),
+        slope = slope,
+        r_squared = r2
+      )
+    })
+}
 
 ```
+
+
+## Get CH4 slopes (ppm/s)
+
 ```{r}
-# Process multiple files
-files <- list.files(pattern = "*.csv")
+get_CH4_slopes(licor_annotated)
 
-all_fluxes <- lapply(files, function(file) {
-  data <- read.csv(file)
-  data$Time <- as.POSIXct(data$Time)
-  FluxCal(data, conc_col = "Conc", time_col = "Time", 
-          area = 0.25, volume = 0.1, gas = "CO2")
-})
+#write.csv(licor_annotated, "../annotated_licor.csv", row.names = FALSE)
+```
 
-# Combine results
-combined_fluxes <- do.call(rbind, all_fluxes)
+## Calculate flux 
+
+## Create final dataframe with plot, flux, and date for downstream applications
+
+
+## Create PDF with all the plots to visually inspect change in concentration over time is linear.
+
+```{r}
+ggplot(licor_annotated,
+       aes(x=datetime, y=CH4))+
+  geom_point()
+# 15 plots, very nice
 ```
 
