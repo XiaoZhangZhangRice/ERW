@@ -1,5 +1,5 @@
 ---
-title: "Flux_Calc"
+title: "Preliminary Analyses"
 author: "Zhang Zhenglin"
 output:
   pdf_document:
@@ -8,13 +8,6 @@ editor_options:
   markdown:
     wrap: sentence
 ---
-# Acknowledgement
-
-Heartfelt gratitude to Jack Lamb for providing a functional code architecture that enabled this to be developed.
-
-# Brief overview
-
-In the field, the start time of each chamber enclosure is recorded. Chambers are placed on for 4 minutes. This code removes the first and last minute of chamber enclosures to ensure that the change in concentration is not subject to disturbance. After which, the data points are annotated to the respective plots and individual slopes (ΔC/ΔT) are computed. All linear regressions were inspected to have R2>0.85 for the slope to be accepted. ΔC/ΔT is then computed with chamber parameters including area, volume, and temperature to determine flux for downstream applications and analyses.
 
 # Necessary libraries
 
@@ -203,14 +196,9 @@ get_CH4_slopes <- function(data) {
 
 ```{r}
 all_fluxes<- get_CH4_slopes(licor_annotated)
-
-sum(all_fluxes$r_squared < 0.85, na.rm = TRUE)
-#all obtained slopes are linear
-sum(all_fluxes$time_span < 60, na.rm = TRUE)
-#all slopes are obtained from at least 1 minute (>60s) of stable linear concentration increase
 ```
 
-# Calculate flux 
+## Calculate flux 
 
 ## Going from change in concentration to flux
 
@@ -239,8 +227,6 @@ all_fluxes$CH4_flux_g_ha_day_all_in_one <- ((((all_fluxes$slope)/((((760*22.4)*(
                               
 ```
 
-# Compiling data and quality check
-
 ## Create final dataframe with plot, flux, and date for downstream applications
 
 ```{r}
@@ -253,7 +239,8 @@ str(final_flux)
 write.xlsx(all_fluxes, file= "../Computed_Flux/all_fluxes.xlsx", sheetName = "1", rowNames = FALSE)
 ```
 
-## Create PDF with all the plots to visually inspect change in concentration over time is linear
+
+## Create PDF with all the plots to visually inspect change in concentration over time is linear.
 
 ```{r}
 # Create a Date column
@@ -261,7 +248,7 @@ licor_annotated <- licor_annotated %>%
   mutate(Date = as.Date(datetime))
 
 # Open PDF device
-pdf("../Figures/CH4_time_series_by_date.pdf", width = 10, height = 6)
+pdf("CH4_time_series_by_date.pdf", width = 10, height = 6)
 
 # Loop over every 2 dates (i.e., 2 plots per page)
 dates <- unique(licor_annotated$Date)
@@ -273,12 +260,12 @@ for (i in seq(1, length(dates), by = 2)) {
   plot_data <- licor_annotated %>% filter(Date %in% current_dates)
 
   p <- ggplot(plot_data, aes(x = datetime, y = CH4, color = Plot, group = Plot)) +
-    geom_point(size=0.5) +
+    geom_line(linewidth = 1) +
     facet_wrap(~ Date, ncol = 1, scales = "free_x") +
     #ylim(0, 20) +   
     labs(title = "CH₄ concentration over time",
          x = "Time",
-         y = "CH₄ (ppm)") +
+         y = "CH₄ (ppb)") +
     theme_minimal(base_size = 14) +
     theme(
       plot.title = element_text(hjust = 0.5, face = "bold"),
@@ -291,6 +278,47 @@ for (i in seq(1, length(dates), by = 2)) {
 dev.off()
 ```
 
+
+```{r}
+ggplot(final_flux,
+       aes(x=Treatment, y=CH4_flux_g_ha_day))+
+  geom_boxplot()
+
+
+model <- lm(CH4_flux_g_ha_day~Treatment, data = final_flux)
+
+anova(model)
+
+means <- emmeans(model, spec = "Treatment")
+cld(means)
+```
+```{r}
+
+flux_plot <- final_flux %>% 
+  group_by(Date, Treatment)%>%
+  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>% 
+  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
+            CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+```
+```{r}
+Jun_27 <- final_flux %>% filter(Date == as.Date("2025-06-27"))
+
+Jul_4 <- final_flux %>% filter(Date == as.Date("2025-07-4"))
+```
+
+```{r}
+model <- lm(CH4_flux_g_ha_day~Treatment, data = Jun_27)
+anova(model)
+means <- emmeans(model, spec = "Treatment")
+cld(means)
+```
+
+```{r}
+model <- lm(CH4_flux_g_ha_day~Treatment, data = Jul_4)
+anova(model)
+means <- emmeans(model, spec = "Treatment")
+cld(means)
+```
 
 
 
