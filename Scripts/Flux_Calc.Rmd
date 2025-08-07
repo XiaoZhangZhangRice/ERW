@@ -47,6 +47,8 @@ library(lubridate)
 library(readxl)
 library(openxlsx)
 library(ggrepel)
+library(gridExtra)
+
 ```
 
 # Entering known parameters of the chamber and set up
@@ -83,9 +85,20 @@ field$mean_headspace <- rowMeans(field[, c("Headspace_1_cm", "Headspace_2_cm", "
 field$Length_cm <- field$mean_headspace+Chamber_lid_height+(field$Extension_length_ft*30.48)
 field$Volume_L <- (field$Length_cm*Chamber_area+LiCor_internal_vol)*0.001
 
-#remove the first minute and last minute
-field$trimmed_start <-  field$Closure_datetime_start + 60 
-field$trimmed_end <- field$Closure_datetime_end - 60
+#remove the first and last segments of the chamber enclosure to get stable fluxes. 
+field <- field %>%
+  mutate(
+    trimmed_start = case_when(
+      Duration_min > 4 ~ Closure_datetime_start + (Duration_min * 60 - 120) / 2,
+      Duration_min == 4 ~ Closure_datetime_start + 60,
+      Duration_min < 4 ~ Closure_datetime_start + (Duration_min * 60) / 6
+    ),
+    trimmed_end = case_when(
+      Duration_min > 4 ~ Closure_datetime_end - (Duration_min * 60 - 120) / 2,
+      Duration_min == 4 ~ Closure_datetime_end - 60,
+      Duration_min < 4 ~ Closure_datetime_end - (Duration_min * 60) / 6
+    )
+  )
 
 str(field)
 ```
@@ -101,7 +114,7 @@ str(field)
 ## Cleaning the master Li-Cor file
 
 ```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_Jul232025.data",
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_4Aug2025.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
   filter(!row_number() %in% c(1))  #removes the units row of the dataframe
@@ -208,6 +221,9 @@ sum(all_fluxes$r_squared < 0.85, na.rm = TRUE)
 #all obtained slopes are linear
 sum(all_fluxes$time_span < 60, na.rm = TRUE)
 #all slopes are obtained from at least 1 minute (>60s) of stable linear concentration increase
+
+all_fluxes %>%
+  filter(r_squared < 0.85)
 ```
 
 # Calculate flux 
@@ -291,7 +307,82 @@ for (i in seq(1, length(dates), by = 2)) {
 dev.off()
 ```
 
+## Create graph with unannotated raw data to do side by side comparison
 
+```{r}
+# 1. Create buffered_time_range from field
+buffered_time_range <- field %>%
+  mutate(Date = as.Date(Closure_datetime_start)) %>%
+  group_by(Date) %>%
+  summarise(
+    earliest = min(Closure_datetime_start) - minutes(3),
+    latest = max(Closure_datetime_end) + minutes(3),
+    .groups = "drop"
+  )
+
+# 2. Add Date to needed_data
+needed_data <- needed_data %>%
+  mutate(Date = as.Date(datetime))
+
+# 3. Join and filter within buffered ranges
+filtered_needed_data <- needed_data %>%
+  left_join(buffered_time_range, by = "Date") %>%
+  filter(datetime >= earliest & datetime <= latest)
+
+# Get list of unique dates
+unique_dates <- unique(filtered_needed_data$Date)
+
+# Start PDF device
+pdf("../Figures/unannotated_CH4_by_date_filtered.pdf", width = 11, height = 8.5)  # 2 plots per page
+
+# Loop through dates in pairs
+for (i in seq(1, length(unique_dates), by = 2)) {
+  date1 <- unique_dates[i]
+  date2 <- if (i + 1 <= length(unique_dates)) unique_dates[i + 1] else NA
+  
+  # Plot for date1
+  plot1 <- ggplot(filter(filtered_needed_data, Date == date1), aes(x = datetime, y = CH4)) +
+    geom_line() +
+    labs(title = paste("CH₄ Over Time -", date1), x = "Time", y = "CH₄ (ppm)") +
+    theme_minimal()
+  
+  # Plot for date2 if available
+  if (!is.na(date2)) {
+    plot2 <- ggplot(filter(filtered_needed_data, Date == date2), aes(x = datetime, y = CH4)) +
+      geom_line() +
+      labs(title = paste("CH₄ Over Time -", date2), x = "Time", y = "CH₄ (ppm)") +
+      theme_minimal() 
+    
+    grid.arrange(plot1, plot2, ncol = 1)
+  } else {
+    grid.arrange(plot1, ncol = 1)
+  }
+}
+
+# Close PDF
+dev.off()
+```
+
+
+## Flux over time
+
+```{r}
+final_flux_graphing <- final_flux %>%
+  group_by(Treatment, Date) %>%
+  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>%
+  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
+  CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+
+
+flux_over_time <- ggplot(final_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_day,  colour =  Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se), size=0.5)
+
+flux_over_time
+
+ggsave(flux_over_time, filename = "../Figures/flux_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+```
 
 
 
