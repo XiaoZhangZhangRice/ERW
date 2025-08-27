@@ -269,8 +269,28 @@ str(final_flux)
 write.xlsx(all_fluxes, file= "../Computed_Flux/all_fluxes.xlsx", sheetName = "1", rowNames = FALSE)
 ```
 
-## Create PDF with all the plots to visually inspect change in concentration over time is linear
+## Flux over time
 
+```{r}
+final_flux_graphing <- final_flux %>%
+  group_by(Treatment, Date) %>%
+  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>%
+  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
+  CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+
+
+flux_over_time <- ggplot(final_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_day,  colour =  Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se), size=0.5)
+
+flux_over_time
+
+ggsave(flux_over_time, filename = "../Figures/flux_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+```
+
+
+## Create PDF with all the plots to visually inspect change in concentration over time is linear
 ```{r}
 # Create a Date column
 licor_annotated <- licor_annotated %>%
@@ -363,26 +383,51 @@ for (i in seq(1, length(unique_dates), by = 2)) {
 dev.off()
 ```
 
-
-## Flux over time
+# Additonal graph where annotated and non-annotated data are both present
 
 ```{r}
-final_flux_graphing <- final_flux %>%
-  group_by(Treatment, Date) %>%
-  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>%
-  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
-  CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+# Create Date column in both datasets
+licor_annotated <- licor_annotated %>%
+  mutate(Date = as.Date(datetime))
 
+filtered_needed_data <- filtered_needed_data %>%
+  mutate(Date = as.Date(datetime))
 
-flux_over_time <- ggplot(final_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_day,  colour =  Treatment))+
-  geom_point()+
-  geom_line()+
-  geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se), size=0.5)
+# Get shared list of dates
+dates <- sort(unique(licor_annotated$Date))
 
-flux_over_time
+# Open PDF device (side-by-side comparison, 2 per page)
+pdf("../Figures/CH4_annotated_vs_unannotated.pdf", width = 11, height = 8.5)
 
-ggsave(flux_over_time, filename = "../Figures/flux_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+for (i in seq(1, length(dates), by = 2)) {
+  
+  current_dates <- dates[i:min(i+1, length(dates))]
+  
+  # Subset annotated & unannotated
+  annotated_sub <- licor_annotated %>% filter(Date %in% current_dates)
+  unannotated_sub <- filtered_needed_data %>% filter(Date %in% current_dates)
+  
+  # Build plot
+  p <- ggplot() +
+    # Unannotated first (background, grey lines)
+    geom_line(data = unannotated_sub, aes(x = datetime, y = CH4), color = "grey60", alpha = 0.6) +
+    # Annotated overlay (colored by Plot)
+    geom_point(data = annotated_sub, aes(x = datetime, y = CH4, color = Plot), size = 0.6) +
+    geom_line(data = annotated_sub, aes(x = datetime, y = CH4, color = Plot), size = 0.4) +
+    facet_wrap(~ Date, ncol = 1, scales = "free_x") +
+    labs(title = "CH₄ concentration over time (Annotated vs. Raw)",
+         x = "Time",
+         y = "CH₄ (ppm)") +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "bottom"
+    )
+  
+  print(p)
+}
+
+dev.off()
+
 ```
-
-
 
