@@ -1,0 +1,126 @@
+---
+title: "Cumulative_Seasonal_Emissions"
+author: "Zhang"
+date: "2025-09-02"
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(openxlsx)
+library(zoo)
+library(dplyr)
+library(tidyr)
+library(zoo)
+
+
+```
+
+# Read Excel daily flux values(computed from gas analyses)
+
+```{r}
+flux <- read_excel("../Computed_Flux/all_fluxes.xlsx", sheet = 1)
+str(flux)
+```
+
+# Linear interpolation
+
+```{r}
+flux_2025 <- flux %>%
+  filter(Date >= as.POSIXct("2025-05-10") & Date <= as.POSIXct("2025-10-06"))
+
+start_date <- as.Date("2025-06-02")
+end_date <- as.Date("2025-08-25")
+date_seq <- seq.Date(start_date, end_date, by = "day")
+
+flux_2025_rice_interpolated <- flux_2025 %>%
+  group_by(Plot) %>%
+  complete(Date = date_seq) %>%
+  ungroup()
+
+flux_2025_rice_interpolated <- flux_2025_rice_interpolated %>%
+  group_by(Plot) %>%
+  mutate(CH4_flux_g_ha_day = na.approx(CH4_flux_g_ha_day, rule = 2)) %>%
+  #mutate(N2O_g_ha_day = na.approx(N2O_g_ha_day, rule = 2)) %>%
+  ungroup()
+
+flux_2025_rice_seasonal_emissions <- flux_2025_rice_interpolated %>%
+  group_by(Plot) %>%
+  summarize(total_CH4_emissions = sum(CH4_flux_g_ha_day, na.rm = TRUE))%>% 
+            #total_N2O_emissions = sum(N2O_g_ha_day, na.rm = TRUE)) 
+  mutate(Period_Year = "Summer_2025") %>%
+  mutate(Period = "Summer") %>%
+  mutate(total_CH4_emissions_kg_ha = total_CH4_emissions/1000)%>%
+  mutate(Treatment = factor(str_sub(Plot, 2)))
+  
+
+ggplot(flux_2025_rice_interpolated, aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
+#ggplot(flux_2025_rice_interpolated, aes(y=N2O_g_ha_day, x=Date, color = Plot)) + geom_point()
+```
+
+# Linear interpolation
+
+```{r}
+linear_interpolation_demo <- flux %>% filter(Plot == "A50")
+
+ggplot(linear_interpolation_demo, aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
+
+ggplot(linear_interpolation_demo, aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point() +geom_line()
+
+ggplot(flux_2025_rice_interpolated%>%filter(Plot=="A50"), aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
+
+ggplot(flux_2025_rice_interpolated %>% filter(Plot == "A50"),
+       aes(x = Date, y = CH4_flux_g_ha_day, color = Plot)) +
+  geom_point() +
+  geom_col(alpha = 0.5, fill = "red")
+```
+
+
+# Simple stats
+
+```{r}
+model <- lm(total_CH4_emissions_kg_ha~Treatment, data=flux_2025_rice_seasonal_emissions)
+anova(model)
+
+str(flux_2025_rice_seasonal_emissions)
+
+Treatment_means = emmeans(model,spec = 'Treatment')
+Treatment_effects = contrast(Treatment_means, method = 'pairwise', adjust = "Tukey")
+summary(Treatment_effects)
+
+cld(Treatment_means)
+
+
+cumulative_seasonal <- flux_2025_rice_seasonal_emissions %>%
+  group_by(Treatment) %>%
+  mutate(total_CH4_emissions_kg_ha_se = sd(total_CH4_emissions_kg_ha)/sqrt(5)) %>%
+  summarise(total_CH4_emissions_kg_ha = mean(total_CH4_emissions_kg_ha),
+  total_CH4_emissions_kg_ha_se = mean(total_CH4_emissions_kg_ha_se))
+
+ggplot(flux_2025_rice_seasonal_emissions, aes(y=total_CH4_emissions_kg_ha, x=Treatment, color = Treatment)) + geom_boxplot()
+
+```
+

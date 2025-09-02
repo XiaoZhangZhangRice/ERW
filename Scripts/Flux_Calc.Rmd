@@ -114,7 +114,7 @@ str(field)
 ## Cleaning the master Li-Cor file
 
 ```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_4Aug2025.data",
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_25Aug2025.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
   filter(!row_number() %in% c(1))  #removes the units row of the dataframe
@@ -286,7 +286,7 @@ flux_over_time <- ggplot(final_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_da
 
 flux_over_time
 
-ggsave(flux_over_time, filename = "../Figures/flux_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+ggsave(flux_over_time, filename = "../Figures/flux_over_time_ERW.jpg", height = 25, width = 25, units = "cm", dpi=400)
 ```
 
 
@@ -297,7 +297,7 @@ licor_annotated <- licor_annotated %>%
   mutate(Date = as.Date(datetime))
 
 # Open PDF device
-pdf("../Figures/CH4_time_series_by_date.pdf", width = 10, height = 6)
+#pdf("../Figures/CH4_time_series_by_date.pdf", width = 10, height = 6)
 
 # Loop over every 2 dates (i.e., 2 plots per page)
 dates <- unique(licor_annotated$Date)
@@ -324,7 +324,7 @@ for (i in seq(1, length(dates), by = 2)) {
   print(p)
 }
 
-dev.off()
+#dev.off()
 ```
 
 ## Create graph with unannotated raw data to do side by side comparison
@@ -353,7 +353,7 @@ filtered_needed_data <- needed_data %>%
 unique_dates <- unique(filtered_needed_data$Date)
 
 # Start PDF device
-pdf("../Figures/unannotated_CH4_by_date_filtered.pdf", width = 11, height = 8.5)  # 2 plots per page
+#pdf("../Figures/unannotated_CH4_by_date_filtered.pdf", width = 11, height = 8.5)  # 2 plots per page
 
 # Loop through dates in pairs
 for (i in seq(1, length(unique_dates), by = 2)) {
@@ -380,10 +380,10 @@ for (i in seq(1, length(unique_dates), by = 2)) {
 }
 
 # Close PDF
-dev.off()
+#dev.off()
 ```
 
-# Additonal graph where annotated and non-annotated data are both present
+## Additonal graph where annotated and non-annotated data are both present
 
 ```{r}
 # Create Date column in both datasets
