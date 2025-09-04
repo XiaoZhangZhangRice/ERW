@@ -1,0 +1,193 @@
+---
+title: "DIC"
+author: "Zhang Zhenglin"
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+# Acknowledgement
+
+Heartfelt gratitude to Taylor Broek for his guidance in DIC quantification methodologies. 
+
+# Brief overview
+
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
+library(readxl)
+library(openxlsx)
+library(ggrepel)
+library(gridExtra)
+
+```
+
+# Read TOC_output
+
+```{r}
+rawTOC <- read.csv("../TOC/12Aug2025_run_ChatGPT.csv", header = TRUE) %>%
+          filter(Analysis =="IC") %>%
+          filter(Sample.ID != "Untitled")
+
+
+conc_summary <- rawTOC %>%
+  group_by(Sample.Name) %>%
+  summarise(mean_conc = mean(Conc., na.rm = TRUE),
+            n = n()) %>%
+  ungroup()
+
+write.xlsx(conc_summary, file= "../TOC/12_Aug_Avg.xlsx", sheetName = "1", rowNames = FALSE)
+
+```
+
+# Read_TOC masterand clean
+
+```{r}
+TOC_master <- read_excel("../TOC/DIC_master.xlsx", sheet = 1)
+
+TOC_master$Conc_final <- TOC_master$DIC_Conc*((TOC_master$DI_Volume+TOC_master$Sample_Volume)/TOC_master$Sample_Volume)
+
+Samples_only <- TOC_master%>%
+                filter(Plot!="Inlet") %>%
+                filter(Plot!="Outlet") %>%
+                mutate(Treatment = str_extract(Plot, "\\d+")) %>%   # extract digits
+                mutate(Treatment = as.factor(Treatment)) 
+
+Inlet_Outlet <- TOC_master%>%
+                filter(Plot%in% c("Inlet", "Outlet"))
+
+
+  
+ggplot(Inlet_Outlet, aes(y=Conc_final, x=Sampling_Date, color = Plot)) + geom_point()
+
+
+ggplot(Samples_only, aes(y=Conc_final, x=Sampling_Date, color = Treatment)) + geom_point()
+
+```
+
+# Some plots for visualisation 
+
+```{r}
+DIC_graphing <- Samples_only %>%
+  group_by(Treatment, Sampling_Date) %>%
+  mutate(Conc_final_se = sd(Conc_final)/sqrt(5)) %>%
+  summarise(Conc_final = mean(Conc_final),
+  Conc_final_se = mean(Conc_final_se))
+
+
+
+DIC_over_time <- ggplot(DIC_graphing, aes(x = Sampling_Date, y = Conc_final,  colour =  Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=Conc_final-Conc_final_se, ymax=Conc_final+Conc_final_se), size=0.5)
+
+DIC_over_time
+
+ggsave(DIC_over_time, filename = "../Figures/DIC_over_time_ERW.jpg", height = 25, width = 25, units = "cm", dpi=400)
+```
+
+# Percolation rate
+
+We assume a percolation rate of 0.21 mm per day.
+
+This are results taken from LaHue an Linquist (2018) https://doi.org/10.1016/j.agwat.2020.106445
+
+![Percolation Rate: Site 1 is the same site as we are using](C:/Users/zhang/Documents/GitHub/ERW/Scripts/Gab_LaHue_Percolation.png)
+
+So a total of 2100 L of water percolates through the field each day per hectar.
+
+0.21 mm = 0.00021 m
+1 ha = 10 000 m2
+Volume = 0.00021*10 000 m2 = 2.1m3
+2.1m3 = 2100 L 
+
+
+# Linear interpolation
+
+```{r}
+#DIC_2025 <- DIC %>%
+#  filter(Date >= as.POSIXct("2025-05-10") & Date <= as.POSIXct("2025-10-06"))
+
+start_date <- as.Date("2025-06-09")
+end_date <- as.Date("2025-07-25")
+date_seq <- seq.Date(start_date, end_date, by = "day")
+
+DIC_2025_interpolated <- Samples_only %>%
+  drop_na()%>%
+  mutate(Date = Sampling_Date) %>%
+  group_by(Plot) %>%
+  complete(Date = date_seq) %>%
+  ungroup()
+
+DIC_2025_interpolated <- DIC_2025_interpolated %>%
+  group_by(Plot) %>%
+  mutate(Conc_final = na.approx(Conc_final, rule = 2)) %>%
+  ungroup() %>%
+  mutate(Treatment = str_extract(Plot, "\\d+")) %>%   # extract digits
+                mutate(Treatment = as.factor(Treatment)) 
+
+#conc multiplied by water percolation to get a c removal rate
+#2100L of water moves through each ha of field per day
+#convert mg to kg, each kg gives 1000000mg
+DIC_2025_interpolated$Daily_C_removed <- DIC_2025_interpolated$Conc_final*2100/1000000
+
+
+DIC_2025_rice_seasonal_C_removal <- DIC_2025_interpolated %>%
+  group_by(Plot) %>%
+  summarize(seasonal_C_removal = sum(Daily_C_removed, na.rm = TRUE))%>% 
+            #total_N2O_emissions = sum(N2O_g_ha_day, na.rm = TRUE)) 
+  mutate(Period_Year = "Summer_2025") %>%
+  mutate(Period = "Summer")%>%
+  mutate(Treatment = str_extract(Plot, "\\d+")) %>%   # extract digits
+                mutate(Treatment = as.factor(Treatment)) 
+
+ggplot(DIC_2025_interpolated, aes(y=Daily_C_removed, x=Date, color = Plot)) + geom_point()
+#ggplot(flux_2025_rice_interpolated, aes(y=N2O_g_ha_day, x=Date, color = Plot)) + geom_point()
+```
+# Simple stats
+
+```{r}
+model <- lm(seasonal_C_removal~Treatment, data=DIC_2025_rice_seasonal_C_removal)
+
+anova(model)
+
+Treatment_means = emmeans(model,spec = 'Treatment')
+Treatment_effects = contrast(Treatment_means, method = 'pairwise', adjust = "Tukey")
+summary(Treatment_effects)
+
+cld(Treatment_means)
+
+C_removal_seasonal <- DIC_2025_rice_seasonal_C_removal %>%
+  group_by(Treatment) %>%
+  mutate(seasonal_C_removal_se = sd(seasonal_C_removal)/sqrt(5)) %>%
+  summarise(seasonal_C_removal = mean(seasonal_C_removal),
+  seasonal_C_removal_se = mean(seasonal_C_removal_se))
+```
+

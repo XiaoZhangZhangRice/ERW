@@ -1,3 +1,10 @@
+[Header]	
+System	TOCV-TNM	
+S/W Version	1.00	
+User		
+Date/Time	8/14/2025 10:15:46 AM	
+
+[Data]	
 Type	Anal.	Sample Name	Sample ID	Cal. Curve	Manual Dilution	Notes	Date / Time	Spl. No.	Inj. No.	Analysis(Inj.)	Area	Mean Area	Conc.	Mean Conc.	Result	Mean Result	SD Area	CV Area	SD Conc	CV Conc	Vial	Excluded	Inj. Vol.	
 Unknown	TOC	Flush	Untitled	C:\TOC-L\CalCurves\Caitlin Webster\081225_TC_500ppm.cal	1.00		8/12/2025 2:52:56 PM	1	1	TC	0.7658	0.4887	0.000	0.000	TOC:0.000mg/L TC:0.000mg/L IC:0.000mg/L	TOC:0.000mg/L TC:0.000mg/L IC:0.000mg/L	0.07241	14.82	0.000	0.00	1	1	50	
 Unknown	TOC	Flush	Untitled	C:\TOC-L\CalCurves\Caitlin Webster\081225_TC_500ppm.cal	1.00		8/12/2025 2:55:07 PM	1	2	TC	0.4375	0.4887	0.000	0.000	TOC:0.000mg/L TC:0.000mg/L IC:0.000mg/L	TOC:0.000mg/L TC:0.000mg/L IC:0.000mg/L	0.07241	14.82	0.000	0.00	1	0	50	
