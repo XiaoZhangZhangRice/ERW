@@ -10,7 +10,7 @@ editor_options:
 ---
 # Acknowledgement
 
-Heartfelt gratitude to Jack Lamb for providing a functional code architecture that enabled this to be developed.
+Heartfelt gratitude to Jack Lamb and Kelly Tucker for providing a functional code architecture that enabled this to be developed.
 
 # Brief overview
 
@@ -114,7 +114,7 @@ str(field)
 ## Cleaning the master Li-Cor file
 
 ```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_25Aug2025.data",
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_3Sep2025.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
   filter(!row_number() %in% c(1))  #removes the units row of the dataframe
@@ -266,7 +266,7 @@ final_flux <- all_fluxes %>%
   
 str(final_flux)
 
-write.xlsx(all_fluxes, file= "../Computed_Flux/all_fluxes.xlsx", sheetName = "1", rowNames = FALSE)
+write.xlsx(final_flux, file= "../Computed_Flux/all_fluxes.xlsx", sheetName = "1", rowNames = FALSE)
 ```
 
 ## Flux over time

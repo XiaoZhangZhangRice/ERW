@@ -44,6 +44,9 @@ library(zoo)
 ```{r}
 flux <- read_excel("../Computed_Flux/all_fluxes.xlsx", sheet = 1)
 str(flux)
+
+flux %>%
+  summarise(n_dates = n_distinct(Date))
 ```
 
 # Linear interpolation
@@ -53,7 +56,7 @@ flux_2025 <- flux %>%
   filter(Date >= as.POSIXct("2025-05-10") & Date <= as.POSIXct("2025-10-06"))
 
 start_date <- as.Date("2025-06-02")
-end_date <- as.Date("2025-08-25")
+end_date <- as.Date("2025-09-03")
 date_seq <- seq.Date(start_date, end_date, by = "day")
 
 flux_2025_rice_interpolated <- flux_2025 %>%
