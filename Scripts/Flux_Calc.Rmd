@@ -114,7 +114,7 @@ str(field)
 ## Cleaning the master Li-Cor file
 
 ```{r}
-raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_3Sep2025.data",
+raw7810 <- read_tsv("../Raw_Licor_Output_By_Day/TG10-01532-2025-05-31T090000_Until_24Sep2025_all_season_here.data",
                     skip = 5   # skips the first 5 rows      
                     ) %>%
   filter(!row_number() %in% c(1))  #removes the units row of the dataframe
