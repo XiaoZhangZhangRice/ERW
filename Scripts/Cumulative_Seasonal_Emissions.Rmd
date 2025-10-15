@@ -1,7 +1,6 @@
 ---
 title: "Cumulative_Seasonal_Emissions"
 author: "Zhang"
-date: "2025-09-02"
 output:
   pdf_document:
     toc: yes
