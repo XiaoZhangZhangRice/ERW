@@ -46,33 +46,22 @@ library(readxl)
 library(openxlsx)
 library(ggrepel)
 library(gridExtra)
-
+library(zoo)
 ```
 
-# Read TOC_output
+
+# Read_TOC master and clean
 
 ```{r}
-rawTOC <- read.csv("../TOC/12Aug2025_run_ChatGPT.csv", header = TRUE) %>%
-          filter(Analysis =="IC") %>%
-          filter(Sample.ID != "Untitled")
+TOC_master <- read_excel("../TOC/Final_2025_DIC.xlsx", sheet = 1)
 
+TOC_master <- TOC_master %>% filter(Sample_Volume == 15) 
+# made a really bad mistake by diluting some samples
+# well, DIC generation is governed by pH right? So what happens if we add water to the sample? pH changes.
+# Good job Zhang, made a lot of samples unusable LOL
+# But hey, we deal with what we have right? 
 
-conc_summary <- rawTOC %>%
-  group_by(Sample.Name) %>%
-  summarise(mean_conc = mean(Conc., na.rm = TRUE),
-            n = n()) %>%
-  ungroup()
-
-write.xlsx(conc_summary, file= "../TOC/12_Aug_Avg.xlsx", sheetName = "1", rowNames = FALSE)
-
-```
-
-# Read_TOC masterand clean
-
-```{r}
-TOC_master <- read_excel("../TOC/DIC_master.xlsx", sheet = 1)
-
-TOC_master$Conc_final <- TOC_master$DIC_Conc*((TOC_master$DI_Volume+TOC_master$Sample_Volume)/TOC_master$Sample_Volume)
+TOC_master$Conc_final <- TOC_master$Concentration_ppm*((TOC_master$DI_Volume+TOC_master$Sample_Volume)/TOC_master$Sample_Volume)
 
 Samples_only <- TOC_master%>%
                 filter(Plot!="Inlet") %>%
@@ -83,16 +72,12 @@ Samples_only <- TOC_master%>%
 Inlet_Outlet <- TOC_master%>%
                 filter(Plot%in% c("Inlet", "Outlet"))
 
-
-  
 ggplot(Inlet_Outlet, aes(y=Conc_final, x=Sampling_Date, color = Plot)) + geom_point()
 
-
 ggplot(Samples_only, aes(y=Conc_final, x=Sampling_Date, color = Treatment)) + geom_point()
-
 ```
 
-# Some plots for visualisation 
+# DIC over time visualization
 
 ```{r}
 DIC_graphing <- Samples_only %>%
@@ -100,8 +85,6 @@ DIC_graphing <- Samples_only %>%
   mutate(Conc_final_se = sd(Conc_final)/sqrt(5)) %>%
   summarise(Conc_final = mean(Conc_final),
   Conc_final_se = mean(Conc_final_se))
-
-
 
 DIC_over_time <- ggplot(DIC_graphing, aes(x = Sampling_Date, y = Conc_final,  colour =  Treatment))+
   geom_point()+
@@ -113,6 +96,23 @@ DIC_over_time
 ggsave(DIC_over_time, filename = "../Figures/DIC_over_time_ERW.jpg", height = 25, width = 25, units = "cm", dpi=400)
 ```
 
+
+# Prelimary Stats
+
+```{r}
+Samples_only$Sampling_Date_factor <- as.factor(Samples_only$Sampling_Date)
+
+model <- lm(Concentration_ppm~Treatment*Sampling_Date_factor, data = Samples_only)
+
+pls205_diagnostics(model)
+
+anova(model)
+means <- emmeans(model, spec = "Treatment", by = "Sampling_Date_factor")
+cld(means)
+
+```
+
+
 # Percolation rate
 
 We assume a percolation rate of 0.21 mm per day.
@@ -121,26 +121,23 @@ This are results taken from LaHue an Linquist (2018) https://doi.org/10.1016/j.a
 
 ![Percolation Rate: Site 1 is the same site as we are using](C:/Users/zhang/Documents/GitHub/ERW/Scripts/Gab_LaHue_Percolation.png)
 
-So a total of 2100 L of water percolates through the field each day per hectar.
+So a total of 2100 L of water percolates through the field each day per hectare.
 
 0.21 mm = 0.00021 m
 1 ha = 10 000 m2
-Volume = 0.00021*10 000 m2 = 2.1m3
+Volume = 0.00021m*10 000 m2 = 2.1m3
 2.1m3 = 2100 L 
 
 
 # Linear interpolation
 
 ```{r}
-#DIC_2025 <- DIC %>%
-#  filter(Date >= as.POSIXct("2025-05-10") & Date <= as.POSIXct("2025-10-06"))
 
-start_date <- as.Date("2025-06-09")
-end_date <- as.Date("2025-07-25")
+start_date <- as.Date("2025-06-18")
+end_date <- as.Date("2025-09-08")
 date_seq <- seq.Date(start_date, end_date, by = "day")
 
 DIC_2025_interpolated <- Samples_only %>%
-  drop_na()%>%
   mutate(Date = Sampling_Date) %>%
   group_by(Plot) %>%
   complete(Date = date_seq) %>%
@@ -156,6 +153,7 @@ DIC_2025_interpolated <- DIC_2025_interpolated %>%
 #conc multiplied by water percolation to get a c removal rate
 #2100L of water moves through each ha of field per day
 #convert mg to kg, each kg gives 1000000mg
+
 DIC_2025_interpolated$Daily_C_removed <- DIC_2025_interpolated$Conc_final*2100/1000000
 
 

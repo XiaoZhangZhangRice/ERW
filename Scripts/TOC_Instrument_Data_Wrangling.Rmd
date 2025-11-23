@@ -1,0 +1,76 @@
+---
+title: "TO instrument data wrangling"
+author: "Zhang Zhenglin"
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+# Acknowledgement
+
+Heartfelt gratitude to Taylor Broek for his guidance in DIC quantification methodologies. 
+
+# Brief overview
+
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
+library(readxl)
+library(openxlsx)
+library(ggrepel)
+library(gridExtra)
+
+```
+
+# Read TOC_output
+
+```{r}
+Raw_TOC_081925 <- read_tsv("../TOC/ASCII/Final_Normal_Data_Files/081925_normaldata.txt",
+                    skip = 9   # skips the first 5 rows      
+                    )
+
+Raw_TOC_082925 <- read_tsv("../TOC/ASCII/Final_Normal_Data_Files/082925_normaldata.txt",
+                    skip = 9   # skips the first 5 rows      
+                    )
+
+Raw_TOC_090325 <- read_tsv("../TOC/ASCII/Final_Normal_Data_Files/090325_normaldata.txt",
+                    skip = 9   # skips the first 5 rows      
+                    )
+
+Raw_TOC_100225 <- read_tsv("../TOC/ASCII/Final_Normal_Data_Files/100225_normaldata.txt",
+                    skip = 9   # skips the first 5 rows      
+                    )
+
+Raw_TOC_combined <- rbind(Raw_TOC_081925,Raw_TOC_082925,Raw_TOC_090325,Raw_TOC_100225)
+
+
+write.xlsx(Raw_TOC_combined, file= "../TOC/Raw_TOC_combined_2025_compiled.xlsx", sheetName = "1", rowNames = FALSE)
+
+```
