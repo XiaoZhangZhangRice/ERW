@@ -230,7 +230,7 @@ all_fluxes %>%
 
 ## Going from change in concentration to flux
 
-![Equation for calcualting flux](C:/Users/zhang/Documents/GitHub/ERW/Scripts/Flux_Equation.png)
+![Equation for calcualting flux](../Scripts/Flux_Equation.png)
 
 Zhang, Z., Fenster, T. L. D., & Linquist, B. A. (2025). Greenhouse gas emissions altered by the introduction of a year-long fallow to continuous rice systems. Journal of Environmental Quality, 1–15. https://doi.org/10.1002/jeq2.70055
 

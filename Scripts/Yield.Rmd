@@ -45,27 +45,40 @@ library(ggrepel)
 # Read data
 
 ```{r}
-field <- read_excel("../Yield/Yield_2025.xlsx", sheet = 1)
-str(field)
+field <- read_excel("../Yield/Full_SubSample_2025.xlsx", sheet = 1)
+str(field) #this is just the field datasheet lol
+
+lab <- read_excel("../Yield/RES_field_datasheet_jdx.xlsx", sheet = 1)
+str(lab) # this was after drying in lab, hand stripping and "official" yield quantification
+
+combined <- field %>%
+  full_join(lab, by = "Plot") %>%
+  arrange(Plot)
+
+combined$Plot <- as.factor(combined$Plot)
+
+str(combined)
 ```
 
-# Compute interim yield
+# Calculate yield
 
 
 ```{r}
-field$interim_yield_Mg_ha <- (field$Total_sample_weight_g-field$Tare_weight_g)*2.28/1000
+combined$yield_Mg_ha <- ((combined$Total_sample_weight_g-combined$Tare_weight_g)/(combined$Sub_sample_weight_g-combined$Tare_weight_g)*(combined$OD_Gain_g))/100*(98.1/86)
+#use (full/sub)*OD_dry_grain to get dry grain per plot (m2)
+#scale g/m2 to Mg/ha, adjust moisture to 14%
 
-yield <- field %>% 
-  select(Plot, interim_yield_Mg_ha) %>%
+yield <- combined %>% 
+  select(Plot, yield_Mg_ha) %>%
   mutate(Treatment = factor(str_sub(Plot, 2)))
 
-model <- lm(interim_yield_Mg_ha~Treatment, data = yield)
+model <- lm(yield_Mg_ha~Treatment, data = yield)
 anova(model)
 means <- emmeans(model, spec = "Treatment")
 cld(means)
 
 ggplot(yield,
-       aes(x=Treatment, y=interim_yield_Mg_ha))+
+       aes(x=Treatment, y=yield_Mg_ha))+
   geom_boxplot()+
   geom_point()
 ```
