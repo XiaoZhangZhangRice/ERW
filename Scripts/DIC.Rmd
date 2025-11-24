@@ -110,6 +110,10 @@ anova(model)
 means <- emmeans(model, spec = "Treatment", by = "Sampling_Date_factor")
 cld(means)
 
+all_means <- emmeans(model, spec = "Treatment")
+cld(all_means)
+
+
 ```
 
 
