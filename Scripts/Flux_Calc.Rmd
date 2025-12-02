@@ -211,11 +211,130 @@ get_CH4_slopes <- function(data) {
 
 ```
 
+# Updated function trial
+
+This fits finds the slopes (change in ppm over time). If R2 is less than 0.99, it activates a moving window to search for a continuous linear segment that is larger than 60s. 
+
+For extremely small slope values (less than 0.000183mg/L/hr), the slope is set to 0 (i.e. no flux).
+
+```{r}
+get_CH4_slopes_2 <- function(data) {
+  # slope threshold
+  slope_threshold <- 24*(0.000183/(63*60))/0.016043
+  
+  data %>%
+    mutate(
+      date = as.Date(datetime),
+      datetime_num = as.numeric(datetime) - min(as.numeric(datetime), na.rm = TRUE)
+    ) %>%
+    group_by(Plot, date) %>%
+    group_split() %>%
+    map_dfr(function(df) {
+      
+      df <- df %>% arrange(datetime_num)
+      n <- nrow(df)
+      
+      # Not enough data to evaluate anything
+      if (n < 2 || all(is.na(df$CH4))) {
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = 0,
+          r_squared = NA_real_
+        ))
+      }
+
+      # --- (A) FULL-SPAN REGRESSION ---
+      model_full <- tryCatch(lm(CH4 ~ datetime_num, data = df), error = function(e) NULL)
+
+      if (!is.null(model_full)) {
+        slope_full <- coef(model_full)["datetime_num"]
+        r2_full <- summary(model_full)$r.squared
+      } else {
+        slope_full <- NA_real_
+        r2_full <- NA_real_
+      }
+
+      # If full-span R2 ≥ 0.99 → use it
+      if (!is.na(r2_full) && r2_full >= 0.99) {
+
+        # apply slope threshold rule
+        if (!is.na(slope_full) && slope_full <= slope_threshold)
+          slope_full <- 0
+
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = slope_full,
+          r_squared = r2_full
+        ))
+      }
+
+      # --- (B) R2 < 0.99 → USE MOVING WINDOW OF 60 POINTS ---
+      if (n < 60) {
+        # not enough data for window
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = 0,
+          r_squared = NA_real_
+        ))
+      }
+
+      best_r2 <- -Inf
+      best_slope <- 0  # default now is 0
+
+      window_size <- 60
+
+      for (start in 1:(n - window_size + 1)) {
+        end <- start + window_size - 1
+        window <- df[start:end, ]
+
+        mod <- tryCatch(lm(CH4 ~ datetime_num, data = window),
+                        error = function(e) NULL)
+        if (is.null(mod)) next
+
+        r2 <- summary(mod)$r.squared
+
+        if (r2 > best_r2) {
+          best_r2 <- r2
+          best_slope <- coef(mod)["datetime_num"]
+        }
+      }
+
+      # if best window R2 still < 0.99 → slope = 0
+      if (best_r2 < 0.99) {
+        best_slope <- 0
+      }
+
+      # apply slope threshold rule
+      if (!is.na(best_slope) && best_slope <= slope_threshold) {
+        best_slope <- 0
+      }
+
+      tibble(
+        Plot = df$Plot[1],
+        date = df$date[1],
+        time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+        slope = best_slope,
+        r_squared = ifelse(best_r2 < 0.99, NA_real_, best_r2)
+      )
+    })
+}
+
+
+```
+
 
 ## Get CH4 slopes (ppm/s)
 
 ```{r}
 all_fluxes<- get_CH4_slopes(licor_annotated)
+
+#all_fluxes <- get_CH4_slopes_2(licor_annotated)
 
 sum(all_fluxes$r_squared < 0.85, na.rm = TRUE)
 #all obtained slopes are linear
@@ -224,6 +343,8 @@ sum(all_fluxes$time_span < 60, na.rm = TRUE)
 
 all_fluxes %>%
   filter(r_squared < 0.85)
+
+detection_limit <- (24*(0.000183/(63*60)))/0.016043
 ```
 
 # Calculate flux 

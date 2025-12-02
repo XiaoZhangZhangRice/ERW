@@ -1,0 +1,69 @@
+---
+title: "GC_Data_Wrangling"
+author: "Zhang Zhenglin"
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
+library(readxl)
+library(openxlsx)
+library(ggrepel)
+```
+
+# Read data
+
+
+```{r}
+field <- read_excel("../Field_Data/GC_Data/Field_Data_GC.xlsx", sheet = 1)
+str(field) #this is just the field datasheet lol
+```
+# Arrange based on GC run 
+
+```{r}
+
+field_sorted <- field %>%
+  mutate(
+    # extract letter (A–E)
+    plot_letter = str_extract(Plot, "^[A-Z]"),
+    # extract number (0–50) and convert to numeric
+    plot_number = as.numeric(str_extract(Plot, "\\d+"))
+  ) %>%
+  arrange(Date, plot_letter, plot_number) %>%
+  select(-plot_letter, -plot_number) 
+
+write.xlsx(field_sorted, file= "../Field_Data/GC_Data/Field_Data_GC_arranged.xlsx", sheetName = "1", rowNames = FALSE)
+
+```
+

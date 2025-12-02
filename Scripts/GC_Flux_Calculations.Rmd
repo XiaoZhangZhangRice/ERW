@@ -1,0 +1,86 @@
+---
+title: "GC_Flux "
+author: "Zhang Zhenglin"
+output:
+  pdf_document:
+    toc: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
+library(readxl)
+library(openxlsx)
+library(ggrepel)
+library(Peak2Flux2)
+```
+
+# Load excel files
+
+The Standard calibration file (Std_Input.csv) and the sample file (Input_samples_No_ppm.csv) on GitHub are located in the directory: XiaoZhangZhangRice/Peak2Flux2/data
+
+```{r}
+#Read Standard Calibration File
+std <- read.csv("../Field_Data/GC_Data/Std_Input.csv")
+
+#Read Sample File
+samples <- read_excel("../Field_Data/GC_Data/Input_samples_No_ppm.xlsx")
+```
+
+# Peak to PPM
+
+This function uses data entries in the standard calibration file to create calibration curves for each individual GC run using peak areas and gas standard ppms. Afterwards, the concentration of samples (ppm) are generated from the peak areas in the samples file and the calibration curves constructed from the standard file. 
+
+```{r}
+sample_ppm <- peak2ppm(std, samples)
+
+sample_ppm
+```
+
+# PPM to flux
+
+
+```{r}
+Final_data <- ppm2flux(sample_ppm, CH4_mass = 16, N2O_mass = 44, Timesteps = 4, Diagnostics = FALSE)
+
+Final_data$CH4_flux_g_ha_day <- Final_data$CH4_flux_corrected*24*0.001*10000
+Final_data$N2O_flux_g_ha_day <- Final_data$N2O_flux_corrected*24*0.001*10000
+
+
+str(Final_data)
+
+GC_Fluxes <- Final_data %>% select(Plot, Date, CH4_flux_g_ha_day, N2O_flux_g_ha_day)
+
+write.xlsx(GC_Fluxes, file= "../Field_Data/GC_Data/GC_Fluxes.xlsx", sheetName = "1", rowNames = FALSE)
+
+```
