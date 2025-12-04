@@ -14,7 +14,7 @@ Heartfelt gratitude to Jack Lamb and Kelly Tucker for providing a functional cod
 
 # Brief overview
 
-In the field, the start time of each chamber enclosure is recorded. Chambers are placed on for 4 minutes. This code removes the first and last minute of chamber enclosures to ensure that the change in concentration is not subject to disturbance. After which, the data points are annotated to the respective plots and individual slopes (ΔC/ΔT) are computed. All linear regressions were inspected to have R2>0.85 for the slope to be accepted. ΔC/ΔT is then computed with chamber parameters including area, volume, and temperature to determine flux for downstream applications and analyses.
+In the field, the start time of each chamber enclosure is recorded. Chambers are placed on for 4 minutes. This code removes the first and last minute of chamber enclosures to ensure that the change in concentration is not subject to disturbance. After which, the data points are annotated to the respective plots and individual slopes (ΔC/ΔT) are computed. All linear regressions were inspected to have R2>0.85 (linearity test) and value greater than 1.83*10-4 mg/L/hr (detection test) for the slope to be accepted. ΔC/ΔT is then computed with chamber parameters including area, volume, and temperature to determine flux for downstream applications and analyses.
 
 # Necessary libraries
 
@@ -48,7 +48,6 @@ library(readxl)
 library(openxlsx)
 library(ggrepel)
 library(gridExtra)
-
 ```
 
 # Entering known parameters of the chamber and set up
@@ -84,6 +83,7 @@ field$Closure_datetime_end <- field$Closure_datetime_start + field$Duration_min 
 field$mean_headspace <- rowMeans(field[, c("Headspace_1_cm", "Headspace_2_cm", "Headspace_3_cm", "Headspace_4_cm")], na.rm = TRUE)
 field$Length_cm <- field$mean_headspace+Chamber_lid_height+(field$Extension_length_ft*30.48)
 field$Volume_L <- (field$Length_cm*Chamber_area+LiCor_internal_vol)*0.001
+```
 
 #remove the first and last segments of the chamber enclosure to get stable fluxes. 
 field <- field %>%
@@ -100,16 +100,8 @@ field <- field %>%
     )
   )
 
-str(field)
-```
 
 # Li-Cor Data
-
-## Reading all the relevant Li-Cor files
-
-```{r}
-#so far not needed yet so leaving it here
-```
 
 ## Cleaning the master Li-Cor file
 
@@ -130,7 +122,8 @@ needed_data <- data.frame(
 )
 
 needed_data <- needed_data %>%
-  filter(residuals < 0.025) %>% #removes datapoints where residuals are low
+  filter(residuals < 0.025) %>% #removes datapoints where residuals are high
+  filter(!is.nan(CH4))  %>% #remove data points where CH4 was not measured
   mutate(
     date = as.Date(datetime),
     time = format(datetime, "%H:%M:%S")
@@ -147,9 +140,9 @@ str(needed_data)
 setDT(needed_data)
 setDT(field)
 
-# Perform a non-equi join (join where datetime is between trimmed_start and trimmed_end)
+# Perform a non-equi join (join where datetime is between Closure_datetime_start and Closure_datetime_end)
 licor_annotated <- field[needed_data, 
-                         on = .(trimmed_start <= datetime, trimmed_end >= datetime), 
+                         on = .(Closure_datetime_start <= datetime, Closure_datetime_end >= datetime), 
                          .(datetime, CH4,  Plot), 
                          nomatch = 0]
 
@@ -158,6 +151,87 @@ licor_annotated$Plot <- as.factor(licor_annotated$Plot)
 
 str(licor_annotated)
 ```
+
+# Select points that show linear increase in (ppm/s)
+
+```{r}
+select_linear_increase <- function(df) {
+
+  # Not enough data
+  if (nrow(df) < 60) return(df %>% dplyr::slice(0))
+
+  # Normalize time so slopes don't collapse to zero
+  df <- df %>%
+    dplyr::mutate(
+      datetime_num = as.numeric(datetime) -
+        min(as.numeric(datetime), na.rm = TRUE)
+    )
+
+  # ---- Trim 1 minute on both ends ----
+  start_trim <- min(df$datetime, na.rm = TRUE) + 80
+  end_trim   <- max(df$datetime, na.rm = TRUE) - 20
+
+  trimmed <- df %>% 
+    dplyr::filter(datetime >= start_trim,
+                  datetime <= end_trim)
+
+  # ---- R2 of trimmed section ----
+  if (nrow(trimmed) >= 60) {
+    model_trim <- tryCatch(lm(CH4 ~ datetime_num, data = trimmed),
+                           error = function(e) NULL)
+
+    if (!is.null(model_trim)) {
+      r2_trim <- summary(model_trim)$r.squared
+      if (r2_trim >= 0.99) return(trimmed)
+    }
+  }
+
+  # ---- Sliding 60-point window on untrimmed ----
+  n <- nrow(df)
+  best_r2 <- -Inf
+  best_df <- NULL
+
+  for (i in 1:(n - 59)) {
+    chunk <- df[i:(i + 59), ]
+
+    mdl <- tryCatch(lm(CH4 ~ datetime_num, data = chunk),
+                    error = function(e) NULL)
+
+    if (is.null(mdl)) next
+
+    r2_val <- summary(mdl)$r.squared
+
+    if (r2_val > best_r2) {
+      best_r2 <- r2_val
+      best_df <- chunk
+    }
+
+    if (r2_val >= 0.99) break
+  }
+
+  if (!is.null(best_df) && best_r2 >= 0.99) {
+    return(best_df)
+  }
+
+  # No good window → return empty
+  df %>% dplyr::slice(0)
+}
+
+get_all_linear_increases <- function(data) {
+
+  data %>%
+    mutate(date = as.Date(datetime)) %>%
+    group_by(Plot, date) %>%
+    group_split() %>%
+    map_dfr(~ select_linear_increase(.x))
+}
+
+licor_annotated <- get_all_linear_increases(licor_annotated)
+
+```
+
+
+
 
 # Flux calculation
 
@@ -211,20 +285,258 @@ get_CH4_slopes <- function(data) {
 
 ```
 
+# Updated function trial
+
+```{r}
+get_CH4_slopes <- function(data, threshold = 0) {
+  
+  # STORAGE for rows used in slope calculations
+  slope_determining_points <- list()
+  idx <- 1
+  
+  results <- data %>%
+    mutate(
+      date = as.Date(datetime),
+      datetime_num = as.numeric(datetime) - min(as.numeric(datetime), na.rm = TRUE)
+    ) %>%
+    group_by(Plot, date) %>%
+    group_split() %>%
+    map_dfr(function(df) {
+      
+      Plot <- unique(df$Plot)
+      date <- unique(df$date)
+      
+      # ----- STEP 1: Trim first/last minute -----
+      t_min <- min(df$datetime)
+      t_max <- max(df$datetime)
+      
+      df_trim <- df %>%
+        filter(datetime >= (t_min + 60),   # +1 minute
+               datetime <= (t_max - 60))   # -1 minute
+      
+      # If trimming removed everything, fallback to full df
+      if(nrow(df_trim) < 2) df_trim <- df
+      
+      
+      # ----- STEP 2: First attempt using trimmed interval -----
+      attempt_fit <- function(dfx) {
+        if(nrow(dfx) < 2) return(NULL)
+        tryCatch(lm(CH4 ~ datetime_num, data = dfx), error = \(e) NULL)
+      }
+      
+      model1 <- attempt_fit(df_trim)
+      r2_1 <- if (!is.null(model1)) summary(model1)$r.squared else 0
+      
+      
+      # ----- STEP 3: If R² < 0.99 → sliding window -----
+      if (is.null(model1) || r2_1 < 0.99) {
+        
+        df_ordered <- df %>% arrange(datetime)
+        n <- nrow(df_ordered)
+        
+        best_model <- NULL
+        best_df <- NULL
+        
+        if (n >= 60) {
+          for (i in 1:(n - 59)) {
+            window_df <- df_ordered[i:(i + 59), ]
+            model_w <- attempt_fit(window_df)
+            
+            if (!is.null(model_w)) {
+              r2_w <- summary(model_w)$r.squared
+              if (r2_w >= 0.99) {
+                best_model <- model_w
+                best_df <- window_df
+                break
+              }
+            }
+          }
+        }
+        
+        # Use fallback if no good window found
+        if (!is.null(best_model)) {
+          model_use <- best_model
+          df_use <- best_df
+        } else {
+          model_use <- model1
+          df_use <- df_trim
+        }
+        
+      } else {
+        model_use <- model1
+        df_use <- df_trim
+      }
+      
+      
+      # ----- STEP 4: Extract slope and R² -----
+      if (is.null(model_use)) {
+        slope <- NA_real_
+        r2 <- NA_real_
+        time_span <- NA_real_
+      } else {
+        slope <- coef(model_use)[["datetime_num"]]
+        r2 <- summary(model_use)$r.squared
+        time_span <- as.numeric(max(df_use$datetime) - min(df_use$datetime), units = "secs")
+      }
+      
+      # ----- STEP 5: Apply slope threshold -----
+      if (!is.na(slope) && slope < threshold) slope <- 0
+      
+      # ----- STEP 6: Store rows used -----
+      df_use$Plot <- Plot
+      df_use$date <- date
+      slope_determining_points[[idx]] <- df_use
+      idx <<- idx + 1
+      
+      # Output summary row
+      tibble(
+        Plot = Plot,
+        date = date,
+        slope = slope,
+        r_squared = r2,
+        time_span = time_span
+      )
+      
+    })
+  
+  # Bind slope-determining rows
+  slope_determining_points_df <- bind_rows(slope_determining_points)
+  
+  return(list(
+    results = results,
+    slope_determining_points = slope_determining_points_df
+  ))
+}
+```
+
+This fits finds the slopes (change in ppm over time). If R2 is less than 0.99, it activates a moving window to search for a continuous linear segment that is larger than 60s. 
+
+For extremely small slope values (less than 0.000183mg/L/hr), the slope is set to 0 (i.e. no flux).
+
+```{r}
+get_CH4_slopes_2 <- function(data) {
+  # slope threshold
+  slope_threshold <- 24*(0.000183/(63*60))/0.016043
+  
+  data %>%
+    mutate(
+      date = as.Date(datetime),
+      datetime_num = as.numeric(datetime) - min(as.numeric(datetime), na.rm = TRUE)
+    ) %>%
+    group_by(Plot, date) %>%
+    group_split() %>%
+    map_dfr(function(df) {
+      
+      df <- df %>% arrange(datetime_num)
+      n <- nrow(df)
+      
+      # Not enough data to evaluate anything
+      if (n < 2 || all(is.na(df$CH4))) {
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = 0,
+          r_squared = NA_real_
+        ))
+      }
+
+      # --- (A) FULL-SPAN REGRESSION ---
+      model_full <- tryCatch(lm(CH4 ~ datetime_num, data = df), error = function(e) NULL)
+
+      if (!is.null(model_full)) {
+        slope_full <- coef(model_full)["datetime_num"]
+        r2_full <- summary(model_full)$r.squared
+      } else {
+        slope_full <- NA_real_
+        r2_full <- NA_real_
+      }
+
+      # If full-span R2 ≥ 0.99 → use it
+      if (!is.na(r2_full) && r2_full >= 0.99) {
+
+        # apply slope threshold rule
+        if (!is.na(slope_full) && slope_full <= slope_threshold)
+          slope_full <- 0
+
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = slope_full,
+          r_squared = r2_full
+        ))
+      }
+
+      # --- (B) R2 < 0.99 → USE MOVING WINDOW OF 60 POINTS ---
+      if (n < 60) {
+        # not enough data for window
+        return(tibble(
+          Plot = df$Plot[1],
+          date = df$date[1],
+          time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+          slope = 0,
+          r_squared = NA_real_
+        ))
+      }
+
+      best_r2 <- -Inf
+      best_slope <- 0  # default now is 0
+
+      window_size <- 60
+
+      for (start in 1:(n - window_size + 1)) {
+        end <- start + window_size - 1
+        window <- df[start:end, ]
+
+        mod <- tryCatch(lm(CH4 ~ datetime_num, data = window),
+                        error = function(e) NULL)
+        if (is.null(mod)) next
+
+        r2 <- summary(mod)$r.squared
+
+        if (r2 > best_r2) {
+          best_r2 <- r2
+          best_slope <- coef(mod)["datetime_num"]
+        }
+      }
+
+      # if best window R2 still < 0.99 → slope = 0
+      if (best_r2 < 0.99) {
+        best_slope <- 0
+      }
+
+      # apply slope threshold rule
+      if (!is.na(best_slope) && best_slope <= slope_threshold) {
+        best_slope <- 0
+      }
+
+      tibble(
+        Plot = df$Plot[1],
+        date = df$date[1],
+        time_span = as.numeric(difftime(max(df$datetime), min(df$datetime), units = "secs")),
+        slope = best_slope,
+        r_squared = ifelse(best_r2 < 0.99, NA_real_, best_r2)
+      )
+    })
+}
+
+
+```
+
+
 ## Get CH4 slopes (ppm/s)
 
 ```{r}
+huehue_flux <-  get_CH4_slopes(licor_annotated, threshold = 24*(0.000183/(63*60))/0.016043)
+
+slopes_df <- huehue_flux$results
+slope_points <- huehue_flux$slope_determining_points
+
+
 all_fluxes<- get_CH4_slopes(licor_annotated)
 
-sum(all_fluxes$r_squared < 0.85, na.rm = TRUE)
-#all obtained slopes are linear
-sum(all_fluxes$time_span < 60, na.rm = TRUE)
-#all slopes are obtained from at least 1 minute (>60s) of stable linear concentration increase
-
-detection_limit <- (24*(0.000183/(63*60)))/0.016043
-
-all_fluxes <- all_fluxes %>%
-  mutate(slope = if_else(slope < detection_limit, 0, slope)) #set ultra low slope values to no flux
+#all_fluxes <- get_CH4_slopes_2(licor_annotated)
 
 sum(all_fluxes$r_squared < 0.85, na.rm = TRUE)
 #all obtained slopes are linear
@@ -234,10 +546,7 @@ sum(all_fluxes$time_span < 60, na.rm = TRUE)
 all_fluxes %>%
   filter(r_squared < 0.85)
 
-all_fluxes %>%
-  filter(slope == 0)
-
-str(all_fluxes)
+detection_limit <- (24*(0.000183/(63*60)))/0.016043
 ```
 
 # Calculate flux 
@@ -266,8 +575,6 @@ all_fluxes$slope_mg_L_s <- (((all_fluxes$slope)/((((760*22.4)*(273+all_fluxes$Ch
 all_fluxes$CH4_flux_g_ha_day <- ((all_fluxes$slope_mg_L_s)/(all_fluxes$Area))*(all_fluxes$Volume_L)*86400*0.001
 
 all_fluxes$CH4_flux_g_ha_day_all_in_one <- ((((all_fluxes$slope)/((((760*22.4)*(273+all_fluxes$Chamber_Temp_C))/(760*273))))*(0.016043))/(all_fluxes$Area))*(all_fluxes$Volume_L)*86400*0.001
-
-
                               
 ```
 
@@ -302,10 +609,12 @@ flux_over_time <- ggplot(final_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_da
 
 flux_over_time
 
-ggsave(flux_over_time, filename = "../Figures/flux_over_time_ERW_licor_Only.jpg", height = 25, width = 25, units = "cm", dpi=400)
+ggsave(flux_over_time, filename = "../Figures/flux_over_time_ERW.jpg", height = 25, width = 25, units = "cm", dpi=400)
 ```
 
-## Graph annotated and non-annotated data together to make sure things look okay
+
+
+## Graph where annotated and non-annotated data are both present
 
 ```{r}
 # Create Date column in both datasets

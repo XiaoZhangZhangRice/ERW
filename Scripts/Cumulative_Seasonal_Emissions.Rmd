@@ -38,24 +38,50 @@ library(zoo)
 
 ```
 
-# Read Excel daily flux values(computed from gas analyses)
+# Read Excel daily flux values from obtained from Li-Cor and GC methodologies
 
 ```{r}
-flux <- read_excel("../Computed_Flux/all_fluxes.xlsx", sheet = 1)
-str(flux)
+licor <- read_excel("../Computed_Flux/all_fluxes_licor.xlsx", sheet = 1)
+licor$Plot <- as.factor(licor$Plot)
 
-flux %>%
-  summarise(n_dates = n_distinct(Date))
+GC <- read_excel("../Computed_Flux/GC_2025_CH4_N2O_Flux.xlsx", sheet = 1) %>%
+            mutate(Treatment = factor(str_sub(Plot, 2)))
+
+str(licor)
+str(GC)
+
+#flux %>%
+#  summarise(n_dates = n_distinct(Date))
 ```
 
-# Linear interpolation
+# Combine into one big dataframe
 
 ```{r}
-flux_2025 <- flux %>%
+N2O_2025 <- GC %>% 
+            select(-CH4_flux_g_ha_day)  # thats all the N2O dates. Other than these, N2O is 0.
+
+CH4_GC <- GC %>% select(-N2O_flux_g_ha_day) %>% drop_na()
+
+CH4_2025 <- rbind(CH4_GC, licor)
+
+# Join CH4_2025 with N2O_2025 by Plot and Date
+flux_2025 <- CH4_2025 %>%
+  left_join(N2O_2025 %>% select(Plot, Date, N2O_flux_g_ha_day),
+            by = c("Plot", "Date")) %>%
+  # Replace NA in N2O_flux_g_ha_day with 0
+  mutate(N2O_flux_g_ha_day = if_else(is.na(N2O_flux_g_ha_day), 0, N2O_flux_g_ha_day)) #during continuous flooded conditions, there are is no N2O emissions
+
+write.xlsx(flux_2025, file= "../Computed_Flux/Final_Flux_2025_CH4_N2O.xlsx", sheetName = "1", rowNames = FALSE)
+```
+
+# Linear interpolation and cumulative seasonal (CH4 and N2O)
+
+```{r}
+flux_2025 <- flux_2025 %>%
   filter(Date >= as.POSIXct("2025-05-10") & Date <= as.POSIXct("2025-10-06"))
 
-start_date <- as.Date("2025-06-02")
-end_date <- as.Date("2025-09-03")
+start_date <- as.Date("2025-05-16")
+end_date <- as.Date("2025-09-24")
 date_seq <- seq.Date(start_date, end_date, by = "day")
 
 flux_2025_rice_interpolated <- flux_2025 %>%
@@ -66,26 +92,109 @@ flux_2025_rice_interpolated <- flux_2025 %>%
 flux_2025_rice_interpolated <- flux_2025_rice_interpolated %>%
   group_by(Plot) %>%
   mutate(CH4_flux_g_ha_day = na.approx(CH4_flux_g_ha_day, rule = 2)) %>%
-  #mutate(N2O_g_ha_day = na.approx(N2O_g_ha_day, rule = 2)) %>%
+  mutate(N2O_flux_g_ha_day = na.approx(N2O_flux_g_ha_day, rule = 2)) %>%
   ungroup()
 
 flux_2025_rice_seasonal_emissions <- flux_2025_rice_interpolated %>%
   group_by(Plot) %>%
-  summarize(total_CH4_emissions = sum(CH4_flux_g_ha_day, na.rm = TRUE))%>% 
-            #total_N2O_emissions = sum(N2O_g_ha_day, na.rm = TRUE)) 
+  summarize(total_CH4_emissions = sum(CH4_flux_g_ha_day, na.rm = TRUE),
+            total_N2O_emissions = sum(N2O_flux_g_ha_day, na.rm = TRUE)) %>%
   mutate(Period_Year = "Summer_2025") %>%
   mutate(Period = "Summer") %>%
-  mutate(total_CH4_emissions_kg_ha = total_CH4_emissions/1000)%>%
+  mutate(total_CH4_emissions_kg_ha = total_CH4_emissions/1000) %>%
+  mutate(total_N2O_emissions_kg_ha = total_N2O_emissions/1000) %>%
+  mutate(GWP = total_CH4_emissions_kg_ha*28+total_N2O_emissions_kg_ha*265) %>% #compute GWP using CH4 (28) and N2O (265) %>%
   mutate(Treatment = factor(str_sub(Plot, 2)))
-  
 
 ggplot(flux_2025_rice_interpolated, aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
-#ggplot(flux_2025_rice_interpolated, aes(y=N2O_g_ha_day, x=Date, color = Plot)) + geom_point()
+ggplot(flux_2025_rice_interpolated, aes(y=N2O_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
 ```
 
-# Linear interpolation
+# CH4 over time 
 
 ```{r}
+CH4_flux_graphing <- flux_2025 %>%
+  group_by(Treatment, Date) %>%
+  mutate(CH4_flux_g_ha_day_se = sd(CH4_flux_g_ha_day)/sqrt(5)) %>%
+  summarise(CH4_flux_g_ha_day = mean(CH4_flux_g_ha_day),
+  CH4_flux_g_ha_day_se = mean(CH4_flux_g_ha_day_se))
+
+
+CH4_over_time <- ggplot(CH4_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_day,  colour =  Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se), size=0.5)
+
+CH4_over_time
+
+ggsave(CH4_over_time, filename = "../Figures/CH4_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+```
+
+
+# N2O over time 
+
+```{r}
+N2O_flux_graphing <- flux_2025 %>%
+  group_by(Treatment, Date) %>%
+  mutate(N2O_flux_g_ha_day_se = sd(N2O_flux_g_ha_day)/sqrt(5)) %>%
+  summarise(N2O_flux_g_ha_day = mean(N2O_flux_g_ha_day),
+  N2O_flux_g_ha_day_se = mean(N2O_flux_g_ha_day_se))
+
+
+N2O_over_time <- ggplot(N2O_flux_graphing, aes(x = Date, y = N2O_flux_g_ha_day,  colour =  Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=N2O_flux_g_ha_day-N2O_flux_g_ha_day_se, ymax=N2O_flux_g_ha_day+N2O_flux_g_ha_day_se), size=0.5)
+
+N2O_over_time
+
+ggsave(N2O_over_time, filename = "../Figures/N2O_over_time.jpg", height = 25, width = 25, units = "cm", dpi=400)
+```
+
+# CH4 stats
+
+```{r}
+CH4_model <- lm(total_CH4_emissions_kg_ha~Treatment, data=flux_2025_rice_seasonal_emissions)
+anova(CH4_model)
+
+CH4_means = emmeans(CH4_model,spec = 'Treatment')
+CH4_effects = contrast(CH4_means, method = 'pairwise', adjust = "Tukey")
+summary(CH4_effects)
+
+cld(CH4_means)
+```
+
+# N2O stats
+
+```{r}
+N2O_model <- lm(total_N2O_emissions_kg_ha~Treatment, data=flux_2025_rice_seasonal_emissions)
+anova(N2O_model)
+
+N2O_means = emmeans(N2O_model,spec = 'Treatment')
+N2O_effects = contrast(N2O_means, method = 'pairwise', adjust = "Tukey")
+summary(N2O_effects)
+
+cld(N2O_means)
+```
+
+
+# GWP stats
+
+```{r}
+GWP_model <- lm(GWP~Treatment, data=flux_2025_rice_seasonal_emissions)
+anova(GWP_model)
+
+GWP_means = emmeans(GWP_model,spec = 'Treatment')
+GWP_effects = contrast(GWP_means, method = 'pairwise', adjust = "Tukey")
+summary(GWP_effects)
+
+cld(GWP_means)
+```
+
+
+# Linear interpolation demo 
+
+
 linear_interpolation_demo <- flux %>% filter(Plot == "A50")
 
 ggplot(linear_interpolation_demo, aes(y=CH4_flux_g_ha_day, x=Date, color = Plot)) + geom_point()
@@ -98,31 +207,5 @@ ggplot(flux_2025_rice_interpolated %>% filter(Plot == "A50"),
        aes(x = Date, y = CH4_flux_g_ha_day, color = Plot)) +
   geom_point() +
   geom_col(alpha = 0.5, fill = "red")
-```
 
-
-# Simple stats
-
-```{r}
-model <- lm(total_CH4_emissions_kg_ha~Treatment, data=flux_2025_rice_seasonal_emissions)
-anova(model)
-
-str(flux_2025_rice_seasonal_emissions)
-
-Treatment_means = emmeans(model,spec = 'Treatment')
-Treatment_effects = contrast(Treatment_means, method = 'pairwise', adjust = "Tukey")
-summary(Treatment_effects)
-
-cld(Treatment_means)
-
-
-cumulative_seasonal <- flux_2025_rice_seasonal_emissions %>%
-  group_by(Treatment) %>%
-  mutate(total_CH4_emissions_kg_ha_se = sd(total_CH4_emissions_kg_ha)/sqrt(5)) %>%
-  summarise(total_CH4_emissions_kg_ha = mean(total_CH4_emissions_kg_ha),
-  total_CH4_emissions_kg_ha_se = mean(total_CH4_emissions_kg_ha_se))
-
-ggplot(flux_2025_rice_seasonal_emissions, aes(y=total_CH4_emissions_kg_ha, x=Treatment, color = Treatment)) + geom_boxplot()
-
-```
 
