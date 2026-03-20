@@ -89,6 +89,7 @@ DIC_graphing <- Samples_only %>%
 DIC_over_time <- ggplot(DIC_graphing, aes(x = Sampling_Date, y = Conc_final,  colour =  Treatment))+
   geom_point()+
   geom_line()+
+  labs(y = expression("Dissolved inorganic carbon (DIC) (mg L"^-1~")")) +
   geom_errorbar(aes(ymin=Conc_final-Conc_final_se, ymax=Conc_final+Conc_final_se), size=0.5)
 
 DIC_over_time

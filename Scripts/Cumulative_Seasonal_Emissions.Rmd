@@ -123,6 +123,7 @@ CH4_flux_graphing <- flux_2025 %>%
 CH4_over_time <- ggplot(CH4_flux_graphing, aes(x = Date, y = CH4_flux_g_ha_day,  colour =  Treatment))+
   geom_point()+
   geom_line()+
+  labs(y = expression("Daily CH"[4]~"Flux (g ha"^-1~" day"^-1~")")) +
   geom_errorbar(aes(ymin=CH4_flux_g_ha_day-CH4_flux_g_ha_day_se, ymax=CH4_flux_g_ha_day+CH4_flux_g_ha_day_se), size=0.5)
 
 CH4_over_time
