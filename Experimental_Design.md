@@ -77,9 +77,9 @@ Yield rings are hula hoops purchased from [amazon](https://www.amazon.com/US-Gam
 | No.      |Site| Planting Date | Harvest Date |Rock Date|Variety|Coordinates|
 | -------- |---------------------| -------- | ---|----- |--|--|
 |1|Tibbits|11 May 2026||9 May 2026|M209|[39°00'01.3"N 121°55'22.9"W](https://maps.app.goo.gl/tDj335dp5fxtmdYu7)|
-|2|River Garden Farms (RGF)|15 May 2026||13 May 2026||[38°50'35.2"N 121°44'52.5"W](https://maps.app.goo.gl/b89Dqb9HK8XjpcJx6)|
-|3|Wiley | 17 May 2026 ||15 May 2026||[38°49'37.3"N 121°35'11.9"W](https://maps.app.goo.gl/cLSMRJbJ6QdRwRcUA)|
-|4|Cathy |      |||
+|2|River Garden Farms (RGF)|23 May 2026||13 May 2026|M209|[38°50'35.2"N 121°44'52.5"W](https://maps.app.goo.gl/b89Dqb9HK8XjpcJx6)|
+|3|Wiley|21 May 2026||15 May 2026|M206|[38°49'37.3"N 121°35'11.9"W](https://maps.app.goo.gl/cLSMRJbJ6QdRwRcUA)|
+|4|Cathy |  ||20 May 2026||[39°31'03.6"N 121°57'25.8"W](https://maps.app.goo.gl/SXuazBUhNH879BCx8)|
 |5|Montna|22 Apr 2026||20 Apr 2026|Koshihikari|[38°57'11.2"N 121°37'30.3"W](https://maps.app.goo.gl/rFJhBa64JA9C4FvT7)|
 
 Note that the below randomisation will be used for all sites. The specific plot will be Site_Plot (e.g. RGF_F50)
@@ -104,7 +104,7 @@ $$
 ### Field notes
 
 * 20 Apr 2026
-Set up Monta site
+   * Set up Monta site
 ![image](https://hackmd.io/_uploads/SyK6l-Epbl.png)
 50 Mg/ha
 ![image](https://hackmd.io/_uploads/BktkbWNTWg.png)
@@ -127,15 +127,19 @@ Set up RGF site
 ![image](https://hackmd.io/_uploads/r13up3Gkfx.png)
 ![image](https://hackmd.io/_uploads/B1nFT3fkMe.png)
 * 15 May 2026
-Set up Wiley Site
-High wind during set up, some rock powder went downwind. 
-As such, control plots were placed in a different plane to prevent contamination
+   * Set up Wiley Site
+   * High wind during set up, some rock powder went    * downwind. 
+   * As such, control plots were placed in a different plane to prevent contamination
 ![image](https://hackmd.io/_uploads/ByfX1qv1Gl.png)
 ![image](https://hackmd.io/_uploads/HJJOJ5wkzl.png)
 ![image](https://hackmd.io/_uploads/HJitk9wkGg.png)
 ![image](https://hackmd.io/_uploads/Syl9J9vyfx.png)
 ![image](https://hackmd.io/_uploads/Bk2pyqP1fe.png)
-
+* 20 May 2026
+   * Cathy site set up
+![image](https://hackmd.io/_uploads/H1K3Kjs1fg.png)
+![image](https://hackmd.io/_uploads/H1NRYoikfe.png)
+![image](https://hackmd.io/_uploads/ByYy9js1Ml.png)
 
 
 ## California experiment - 2025 
